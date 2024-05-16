@@ -114,10 +114,13 @@ data_analysis_crew = Crew(
 # Create the Flask app
 app = Flask(__name__)
 
+# Health check endpoint
 @app.route('/health', methods=['GET'])
 def health():
+    logger.debug("Health check endpoint hit")
     return jsonify({"status": "healthy"}), 200
 
+# Define the API endpoint
 @app.route('/analyze', methods=['POST'])
 def analyze():
     data = request.json
