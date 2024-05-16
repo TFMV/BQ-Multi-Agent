@@ -16,6 +16,7 @@ load_dotenv()
 # Load your OpenAI API key
 openai_api_key = os.getenv("OPENAI_API_KEY")
 os.environ["OPENAI_MODEL_NAME"] = 'gpt-3.5-turbo'
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = '/app/service-account-key.json'  # Path inside the Docker container
 
 # Initialize BigQuery client
 bq_client = bigquery.Client()

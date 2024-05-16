@@ -3,6 +3,7 @@ FROM python:3.10-slim
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json
 
 # Set the working directory
 WORKDIR /app
@@ -17,9 +18,6 @@ COPY . .
 # Copy the service account key file into the Docker image
 COPY sa.json /app/service-account-key.json
 
-# Set the GOOGLE_APPLICATION_CREDENTIALS environment variable
-ENV GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json
-
 # Debug step: List files in the working directory and potential subdirectories
 RUN find /app -name '*.db' -exec ls -la {} \;
 
@@ -29,5 +27,5 @@ RUN find /app -name '*.db' -exec rm -f {} \;
 # Expose the port the app runs on
 EXPOSE 8080
 
-# Run the application
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "app:app"]
+# Run the application with increased timeout and more workers
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "--timeout", "240", "--workers", "4", "app:app"]
