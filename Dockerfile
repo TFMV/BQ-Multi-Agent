@@ -28,4 +28,4 @@ RUN find /app -name '*.db' -exec rm -f {} \;
 EXPOSE 8080
 
 # Run the application with increased timeout and more workers
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "--timeout", "240", "--workers", "4", "app:app"]
+CMD find /app -name '*.db' -exec rm -f {} \; && gunicorn -b 0.0.0.0:8080 --timeout 240 --workers 4 app:app

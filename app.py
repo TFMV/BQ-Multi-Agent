@@ -1,5 +1,6 @@
 import os
 import logging
+import uuid
 from flask import Flask, request, jsonify
 from google.cloud import bigquery
 from dotenv import load_dotenv
@@ -21,6 +22,9 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = '/app/service-account-key.json'  
 # Initialize BigQuery client
 bq_client = bigquery.Client()
 
+# Generate a unique collection name
+unique_collection_name = str(uuid.uuid4())
+
 # Define agents with memory and tools
 def create_agent(role, goal, backstory):
     logger.debug(f"Creating agent with role: {role}")
@@ -29,7 +33,9 @@ def create_agent(role, goal, backstory):
         goal=goal,
         backstory=backstory,
         memory=True,
-        verbose=True
+        verbose=True,
+        allow_reset=True,  # Ensure allow_reset is set
+        memory_config=ChromaDbConfig(allow_reset=True)  # Ensure allow_reset is set
     )
 
 query_agent = create_agent(
@@ -96,14 +102,14 @@ data_analysis_crew = Crew(
     tasks=[query_task, analysis_task, qa_task],
     verbose=True,
     memory=True,
-    memory_collection_name="unique_collection_name",  # Change the collection name to a unique one
+    allow_reset=True,  # Ensure allow_reset is set
+    memory_collection_name=unique_collection_name,  # Use unique collection name
     memory_config=ChromaDbConfig(allow_reset=True)  # Enable allow_reset
 )
 
 # Create the Flask app
 app = Flask(__name__)
 
-# Define the API endpoint
 @app.route('/analyze', methods=['POST'])
 def analyze():
     data = request.json
