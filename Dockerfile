@@ -1,37 +1,33 @@
-# Stage 1: Build environment
-FROM python:3.10-slim as build
-
-# Set the working directory
-WORKDIR /app
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    gfortran \
-    libatlas-base-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy the requirements file into the image
-COPY requirements.txt .
-
-# Upgrade pip
-RUN pip install --upgrade pip
-
-# Install the required packages
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Stage 2: Runtime environment
+# Use the official Python image from the Docker Hub
 FROM python:3.10-slim
 
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+
 # Set the working directory
 WORKDIR /app
 
-# Copy installed packages from the build stage
-COPY --from=build /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
-COPY --from=build /usr/local/bin /usr/local/bin
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code into the image
+# Copy the rest of the application code
 COPY . .
 
-# Command to run the application
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8080", "app:app"]
+# Copy the service account key file into the Docker image
+COPY sa.json /app/service-account-key.json
+
+# Set the GOOGLE_APPLICATION_CREDENTIALS environment variable
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json
+
+# Debug step: List files in the working directory and potential subdirectories
+RUN find /app -name '*.db' -exec ls -la {} \;
+
+# Delete any SQLite database files found in the /app directory or subdirectories
+RUN find /app -name '*.db' -exec rm -f {} \;
+
+# Expose the port the app runs on
+EXPOSE 8080
+
+# Run the application
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "app:app"]
