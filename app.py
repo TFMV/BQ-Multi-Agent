@@ -2,9 +2,10 @@ import os
 import logging
 from flask import Flask, request, jsonify
 from google.cloud import bigquery
-from crewai import Agent, Task, Crew
-from crewai_tools import BigQueryTool
 from dotenv import load_dotenv
+from crewai import Agent, Task, Crew
+from embedchain.vectordb.chroma import ChromaDbConfig
+from sqlalchemy import create_engine, inspect
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -19,54 +20,39 @@ os.environ["OPENAI_MODEL_NAME"] = 'gpt-3.5-turbo'
 # Initialize BigQuery client
 bq_client = bigquery.Client()
 
-# Define the BigQuery Tool
-class BigQueryTool:
-    def __init__(self, client):
-        self.client = client
-
-    def query(self, sql_query):
-        try:
-            query_job = self.client.query(sql_query)
-            results = query_job.result()
-            data = results.to_dataframe()
-            logger.debug(f"Query executed successfully: {sql_query}")
-            return data
-        except Exception as e:
-            logger.error(f"Error executing query: {e}")
-            raise
-
 # Define agents with memory and tools
-query_agent = Agent(
+def create_agent(role, goal, backstory):
+    logger.debug(f"Creating agent with role: {role}")
+    return Agent(
+        role=role,
+        goal=goal,
+        backstory=backstory,
+        memory=True,
+        verbose=True
+    )
+
+query_agent = create_agent(
     role="BigQuery Specialist",
     goal="Query BigQuery datasets to retrieve relevant data",
-    backstory="You are a specialist in querying BigQuery to extract meaningful data for analysis.",
-    tools=[BigQueryTool(bq_client)],
-    memory=True,
-    verbose=True
+    backstory="You are a specialist in querying BigQuery to extract meaningful data for analysis."
 )
 
-analysis_agent = Agent(
+analysis_agent = create_agent(
     role="Data Analysis Specialist",
     goal="Analyze datasets and provide insightful visualizations and conclusions",
-    backstory="You specialize in analyzing complex datasets and providing meaningful insights through visualizations and statistical methods.",
-    tools=[BigQueryTool(bq_client)],
-    memory=True,
-    verbose=True
+    backstory="You specialize in analyzing complex datasets and providing meaningful insights through visualizations and statistical methods."
 )
 
-qa_agent = Agent(
+qa_agent = create_agent(
     role="Quality Assurance Specialist",
     goal="Review the analysis results for accuracy, completeness, and clarity",
-    backstory="You are an expert in ensuring the quality of data analysis, checking for accuracy, thoroughness, and actionable insights.",
-    tools=[BigQueryTool(bq_client)],
-    memory=True,
-    verbose=True
+    backstory="You are an expert in ensuring the quality of data analysis, checking for accuracy, thoroughness, and actionable insights."
 )
 
 # Define tasks
 query_task = Task(
     description=(
-        "Query the BigQuery dataset with the following SQL query:\n{sql_query}\n"
+        "Execute the following SQL query on the BigQuery dataset:\n{sql_query}\n"
         "Retrieve the results and pass them to the analysis agent."
     ),
     expected_output="A DataFrame containing the queried data.",
@@ -108,17 +94,13 @@ data_analysis_crew = Crew(
     agents=[query_agent, analysis_agent, qa_agent],
     tasks=[query_task, analysis_task, qa_task],
     verbose=True,
-    memory=True
+    memory=True,
+    memory_collection_name="unique_collection_name",  # Change the collection name to a unique one
+    memory_config=ChromaDbConfig(allow_reset=True)  # Enable allow_reset
 )
 
 # Create the Flask app
 app = Flask(__name__)
-
-# Health check endpoint
-@app.route('/health', methods=['GET'])
-def health():
-    logger.debug("Health check endpoint hit")
-    return jsonify({"status": "healthy"}), 200
 
 # Define the API endpoint
 @app.route('/analyze', methods=['POST'])
@@ -138,13 +120,23 @@ def analyze():
 
 # Define the main function to execute the crew
 def run_data_analysis(sql_query):
+    # Execute the SQL query using BigQuery client
+    query_job = bq_client.query(sql_query)
+    results = query_job.result().to_dataframe()
+    logger.debug(f"Query results: {results}")
+
     inputs = {
-        "sql_query": sql_query
+        "sql_query": sql_query,
+        "query_results": results
     }
     logger.debug(f"Running data analysis with inputs: {inputs}")
     result = data_analysis_crew.kickoff(inputs=inputs)
     logger.debug(f"Data analysis result: {result}")
     return result
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "healthy"}), 200
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
