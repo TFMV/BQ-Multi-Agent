@@ -1,5 +1,6 @@
 import os
 import logging
+import uuid
 import glob
 from flask import Flask, request, jsonify
 from google.cloud import bigquery
@@ -136,25 +137,12 @@ def run_data_analysis(sql_query):
 
     inputs = {
         "sql_query": sql_query,
-        "query_results": results.to_dict(orient='records')  # Convert DataFrame to list of dicts
+        "query_results": results
     }
     logger.debug(f"Running data analysis with inputs: {inputs}")
-    
-    # Run analysis task
-    analysis_result = data_analysis_crew.run_task(task=analysis_task, inputs=inputs)
-    logger.debug(f"Analysis result: {analysis_result}")
-
-    # Run QA task with analysis result
-    qa_result = data_analysis_crew.run_task(task=qa_task, inputs=analysis_result)
-    logger.debug(f"QA result: {qa_result}")
-
-    # Combine analysis result and QA report
-    combined_result = {
-        "analysis_result": analysis_result,
-        "qa_report": qa_result
-    }
-
-    return combined_result
+    result = data_analysis_crew.kickoff(inputs=inputs)
+    logger.debug(f"Data analysis result: {result}")
+    return result
 
 @app.route('/health', methods=['GET'])
 def health():
