@@ -1,12 +1,12 @@
 import os
 import logging
-import uuid
+import glob
 from flask import Flask, request, jsonify
 from google.cloud import bigquery
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew
 from embedchain.vectordb.chroma import ChromaDbConfig
-from sqlalchemy import create_engine, inspect
+from embedchain.app import App
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -22,8 +22,18 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = '/app/service-account-key.json'  
 # Initialize BigQuery client
 bq_client = bigquery.Client()
 
-# Generate a unique collection name
-unique_collection_name = str(uuid.uuid4())
+# Function to delete existing SQLite files
+def delete_existing_sqlite_files():
+    sqlite_files = glob.glob('/app/*.db')
+    for file in sqlite_files:
+        try:
+            os.remove(file)
+            logger.info(f"Deleted existing SQLite file: {file}")
+        except Exception as e:
+            logger.error(f"Error deleting SQLite file {file}: {e}")
+
+# Call the function to delete existing SQLite files
+delete_existing_sqlite_files()
 
 # Define agents with memory and tools
 def create_agent(role, goal, backstory):
@@ -32,10 +42,7 @@ def create_agent(role, goal, backstory):
         role=role,
         goal=goal,
         backstory=backstory,
-        memory=True,
-        verbose=True,
-        allow_reset=True,  # Ensure allow_reset is set
-        memory_config=ChromaDbConfig(allow_reset=True)  # Ensure allow_reset is set
+        verbose=True
     )
 
 query_agent = create_agent(
@@ -96,15 +103,10 @@ qa_task = Task(
     agent=qa_agent
 )
 
-# Define the crew
 data_analysis_crew = Crew(
     agents=[query_agent, analysis_agent, qa_agent],
     tasks=[query_task, analysis_task, qa_task],
-    verbose=True,
-    memory=True,
-    allow_reset=True,  # Ensure allow_reset is set
-    memory_collection_name=unique_collection_name,  # Use unique collection name
-    memory_config=ChromaDbConfig(allow_reset=True)  # Enable allow_reset
+    verbose=True
 )
 
 # Create the Flask app
@@ -134,12 +136,25 @@ def run_data_analysis(sql_query):
 
     inputs = {
         "sql_query": sql_query,
-        "query_results": results
+        "query_results": results.to_dict(orient='records')  # Convert DataFrame to list of dicts
     }
     logger.debug(f"Running data analysis with inputs: {inputs}")
-    result = data_analysis_crew.kickoff(inputs=inputs)
-    logger.debug(f"Data analysis result: {result}")
-    return result
+    
+    # Run analysis task
+    analysis_result = data_analysis_crew.run_task(task=analysis_task, inputs=inputs)
+    logger.debug(f"Analysis result: {analysis_result}")
+
+    # Run QA task with analysis result
+    qa_result = data_analysis_crew.run_task(task=qa_task, inputs=analysis_result)
+    logger.debug(f"QA result: {qa_result}")
+
+    # Combine analysis result and QA report
+    combined_result = {
+        "analysis_result": analysis_result,
+        "qa_report": qa_result
+    }
+
+    return combined_result
 
 @app.route('/health', methods=['GET'])
 def health():
